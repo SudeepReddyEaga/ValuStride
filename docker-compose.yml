@@ -1,0 +1,42 @@
+services:
+  # Layer 1: In-Memory DB Cache Engine
+  redis_cache:
+    image: redis:7-alpine
+    container_name: redis_cache
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # Layer 2: Core Machine Learning Engine
+  ml_api:
+    image: python:3.10-slim
+    container_name: ml_api
+    working_dir: /app
+    volumes:
+      - ./app:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis_cache
+    # FIX: Added --trusted-host parameters to force download clearance over LPU WiFi Network
+    command: >
+      bash -c "pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt && python train.py && python main.py"
+    depends_on:
+      - redis_cache
+
+  # Layer 3: Reactive Streamlit UI Dashboard Interface
+  frontend_ui:
+    image: python:3.10-slim
+    container_name: frontend_ui
+    working_dir: /app
+    volumes:
+      - ./app:/app
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://ml_api:8000/predict
+    # FIX: Added identical trusted-host security bypass parameters
+    command: >
+      bash -c "pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt && streamlit run ui.py --server.port=8501 --server.address=0.0.0.0"
+    depends_on:
+      - ml_api
