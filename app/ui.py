@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import plotly.express as px
+from pathlib import Path
 
 API_HOST = os.getenv("API_HOST", "localhost")
 
@@ -72,40 +73,53 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Self-healing absolute data mapping paths
+# --------------------------------------------------
+# Load Dataset
+# --------------------------------------------------
 @st.cache_data
 def load_raw_dataset():
-    paths_to_check = ["kc_house_data.csv", "app/kc_house_data.csv", "../app/kc_house_data.csv"]
-    for path in paths_to_check:
-        if os.path.exists(path):
-            df = pd.read_csv(path)
+    base_dir = Path(__file__).resolve().parent
+    csv_path = base_dir / "kc_house_data.csv"
+
+    try:
+        if csv_path.exists():
+            df = pd.read_csv(csv_path)
             df.columns = df.columns.str.strip()
             return df
-            
-    try:
-        MIRROR_URL = (
-            "https://raw.githubusercontent.com/"
-            "selva86/datasets/master/BostonHousing.csv"
-        )
-        df = pd.read_csv(MIRROR_URL, nrows=1000)
-        return df
-    except Exception as e:
-        st.error(f"Error: {e}")
+
+        st.error(f"Dataset not found:\n{csv_path}")
         return None
 
+    except Exception as e:
+        st.error(f"Error loading dataset: {e}")
+        return None
+
+
+# Load dataset
 df_raw = load_raw_dataset()
 
 @st.cache_resource
 def load_models():
-    m_path, r_path, s_path = "best_models.joblib", "reg_model.joblib", "scaler.joblib"
-    if not (
-        os.path.exists(m_path)
-        and os.path.exists(r_path)
-        and os.path.exists(s_path)
-    ):
-        m_path = "app/best_models.joblib"
-        r_path = "app/reg_model.joblib"
-        s_path = "app/scaler.joblib"
-    return joblib.load(m_path), joblib.load(r_path), joblib.load(s_path)
+    base_dir = Path(__file__).resolve().parent
+
+    model_path = base_dir / "best_models.joblib"
+    reg_path = base_dir / "reg_model.joblib"
+    scaler_path = base_dir / "scaler.joblib"
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"{model_path} not found")
+
+    if not reg_path.exists():
+        raise FileNotFoundError(f"{reg_path} not found")
+
+    if not scaler_path.exists():
+        raise FileNotFoundError(f"{scaler_path} not found")
+
+    local_models = joblib.load(model_path)
+    local_reg = joblib.load(reg_path)
+    local_scaler = joblib.load(scaler_path)
+
+    return local_models, local_reg, local_scaler
 
 st.markdown('<h1 class="glow-title">ValuStride Analytics</h1>', unsafe_allow_html=True)
 st.markdown('<p class="glow-subtitle">Enterprise Real-Time Property Intelligence & Distributed MLOps Architecture</p>', unsafe_allow_html=True)
