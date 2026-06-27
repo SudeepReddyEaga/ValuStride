@@ -30,25 +30,22 @@ pipeline {
             }
         }
 
-        stage('Push Docker Image') {
+stage('Push Docker Image') {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-credentials',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_PASS'
+        )]) {
 
-            steps {
-
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-
-                    sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
-
-                    sh 'docker push $IMAGE_NAME:$IMAGE_TAG'
-
-                }
-
-            }
-
+            sh '''
+                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                docker push $IMAGE_NAME:$IMAGE_TAG
+                docker logout
+            '''
         }
+    }
+}
 
         stage('Deploy to Kubernetes') {
 
@@ -61,6 +58,7 @@ pipeline {
                 kubectl apply -f k8s/service.yaml
 
                 kubectl rollout restart deployment valustride-deployment
+		kubectl rollout status deployment valustride-deployment
                 '''
 
             }
