@@ -19,32 +19,28 @@ pipeline {
         }
 
         stage('Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
+    steps {
+        withCredentials([usernamePassword(
+            credentialsId: 'dockerhub-credentials',
+            usernameVariable: 'DOCKER_USER',
+            passwordVariable: 'DOCKER_PASS'
+        )]) {
+            writeFile file: 'docker-token.txt', text: DOCKER_PASS
 
-                    sh '''
-                        set -e
+            sh '''
+                set -e
 
-                        echo "Docker User = $DOCKER_USER"
+                echo "Docker User = $DOCKER_USER"
 
-                        if [ -z "$DOCKER_PASS" ]; then
-                            echo "ERROR: Docker password is empty!"
-                            exit 1
-                        fi
+                cat docker-token.txt | docker login -u "$DOCKER_USER" --password-stdin
 
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                docker push $IMAGE_NAME:$IMAGE_TAG
 
-                        docker push $IMAGE_NAME:$IMAGE_TAG
-
-                        docker logout
-                    '''
-                }
-            }
+                docker logout
+            '''
         }
+    }
+}
 
         stage('Deploy to Kubernetes') {
             steps {
