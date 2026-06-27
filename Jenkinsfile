@@ -4,15 +4,26 @@ pipeline {
 
     environment {
         IMAGE_NAME = "sudeepkumarreddyeaga/valustride"
-        IMAGE_TAG  = "latest"
+        IMAGE_TAG = "latest"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/SudeepReddyEaga/ValuStride.git'
+                checkout scm
+            }
+        }
+
+        stage('Verify Workspace') {
+            steps {
+                sh '''
+                    echo "Current Directory:"
+                    pwd
+
+                    echo "Workspace Contents:"
+                    ls -R
+                '''
             }
         }
 
@@ -55,8 +66,8 @@ pipeline {
 
                     export KUBECONFIG=/var/jenkins_home/.kube/config
 
-                    kubectl apply -f k8s/deployment.yml
-                    kubectl apply -f k8s/service.yml
+                    kubectl apply --validate=false -f k8s/deployment.yml
+                    kubectl apply --validate=false -f k8s/service.yml
 
                     kubectl rollout restart deployment valustride-deployment
                     kubectl rollout status deployment/valustride-deployment
@@ -68,6 +79,9 @@ pipeline {
             steps {
                 sh '''
                     export KUBECONFIG=/var/jenkins_home/.kube/config
+
+                    echo "===== Nodes ====="
+                    kubectl get nodes
 
                     echo "===== Pods ====="
                     kubectl get pods -o wide
@@ -93,7 +107,7 @@ pipeline {
         }
 
         always {
-            cleanWs()
+            echo 'Pipeline Finished.'
         }
     }
 }
