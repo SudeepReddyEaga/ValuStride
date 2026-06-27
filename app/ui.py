@@ -8,10 +8,11 @@ import joblib
 import plotly.express as px
 
 POSSIBLE_URLS = [
-    "http://ml_api:8000/predict",                 
-    "http://172.28.160",          
-    "http://docker.internal",  
-    "http://127.0.0"              
+    "http://ml_api:8000/predict",
+    "http://host.docker.internal:8000/predict",
+    "http://localhost:8000/predict",
+    "http://127.0.0.1:8000/predict"
+]              
 ]
 
 # 1. Page Configuration & Premium Theming Injections
