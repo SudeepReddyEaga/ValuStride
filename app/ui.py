@@ -7,20 +7,21 @@ import numpy as np
 import joblib
 import plotly.express as px
 
+API_HOST = os.getenv("API_HOST", "localhost")
+
 POSSIBLE_URLS = [
-    "http://ml_api:8000/predict",
+    f"http://{API_HOST}:8000/predict",
     "http://host.docker.internal:8000/predict",
     "http://localhost:8000/predict",
     "http://127.0.0.1:8000/predict"
 ]              
-]
 
 # 1. Page Configuration & Premium Theming Injections
 st.set_page_config(page_title="ValuStride Analytics Suite", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
     <style>
-    @import url('https://googleapis.com');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
     html, body, [data-testid="stAppViewContainer"] {
         font-family: 'Plus Jakarta Sans', sans-serif;
         background: radial-gradient(circle at 90% 10%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
@@ -81,13 +82,30 @@ def load_raw_dataset():
             return df
             
     try:
-        MIRROR_URL = "https://githubusercontent.com"
+        MIRROR_URL = (
+            "https://raw.githubusercontent.com/"
+            "selva86/datasets/master/BostonHousing.csv"
+        )
         df = pd.read_csv(MIRROR_URL, nrows=1000)
         return df
-    except:
+    except Exception as e:
+        st.error(f"Error: {e}")
         return None
 
 df_raw = load_raw_dataset()
+
+@st.cache_resource
+def load_models():
+    m_path, r_path, s_path = "best_models.joblib", "reg_model.joblib", "scaler.joblib"
+    if not (
+        os.path.exists(m_path)
+        and os.path.exists(r_path)
+        and os.path.exists(s_path)
+    ):
+        m_path = "app/best_models.joblib"
+        r_path = "app/reg_model.joblib"
+        s_path = "app/scaler.joblib"
+    return joblib.load(m_path), joblib.load(r_path), joblib.load(s_path)
 
 st.markdown('<h1 class="glow-title">ValuStride Analytics</h1>', unsafe_allow_html=True)
 st.markdown('<p class="glow-subtitle">Enterprise Real-Time Property Intelligence & Distributed MLOps Architecture</p>', unsafe_allow_html=True)
@@ -122,9 +140,15 @@ with tab1:
 
     if submit:
         payload = {
-            "bedrooms": bedrooms, "bathrooms": bathrooms, "sqft_living": sqft_living,
-            "floors": floors, "grade": grade, "sqft_above": sqft_above,
-            "sqft_basement": sqft_basement, "lat": lat, "sqft_living15": sqft_living15,
+            "bedrooms": int(bedrooms),
+            "bathrooms": float(bathrooms),
+            "sqft_living": int(sqft_living),
+            "floors": float(floors),
+            "grade": int(grade),
+            "sqft_above": int(sqft_above),
+            "sqft_basement": int(sqft_basement),
+            "lat": float(lat),
+            "sqft_living15": int(sqft_living15),
             "model_type": model_type
         }
         
@@ -132,33 +156,33 @@ with tab1:
             response_data = None
             for url in POSSIBLE_URLS:
                 try:
-                    res = requests.post(url, json=payload, timeout=1.5)
+                    res = requests.post(url, json=payload, timeout=5)
                     if res.status_code == 200:
-                        response_data = res.json()
-                        break
-                except: pass
+                        try:
+                            response_data = res.json()
+                            break
+                        except ValueError:
+                            continue
+                except Exception:
+                    continue
             
             if response_data is None:
                 try:
-                    m_path, r_path, s_path = "best_models.joblib", "reg_model.joblib", "scaler.joblib"
-                    if not os.path.exists(m_path): m_path, r_path, s_path = "app/best_models.joblib", "app/reg_model.joblib", "app/scaler.joblib"
-                    
-                    local_models = joblib.load(m_path)
-                    local_reg = joblib.load(r_path)
-                    local_scaler = joblib.load(s_path)
+                    local_models, local_reg, local_scaler = load_models()
                     
                     raw_features = np.array([[bedrooms, bathrooms, sqft_living, floors, grade, sqft_above, sqft_basement, lat, sqft_living15]])
                     scaled_features = local_scaler.transform(raw_features)
                     
-                    price_pred = float(local_reg.predict(scaled_features))
-                    class_pred = int(local_models[model_type].predict(scaled_features))
+                    price_pred = float(local_reg.predict(scaled_features)[0])
+                    class_pred = int(local_models[model_type].predict(scaled_features)[0])
                     
                     response_data = {
                         "predicted_price": round(price_pred, 2),
                         "price_class": class_pred,
                         "source": "Edge-Computing Network Fallback (Local Cache)"
                     }
-                except: pass
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
             if response_data:
                 tiers = {
@@ -168,7 +192,7 @@ with tab1:
                     3: {"name": "Ultimate Luxury Variant", "color": "#f59e0b", "bg": "rgba(245,158,11,0.15)"}
                 }
                 tier = tiers.get(response_data['price_class'], {"name": "Unknown", "color": "#ffffff", "bg": "rgba(0,0,0,0.5)"})
-                formatted_price = f"${response_data['predicted_price']:,}"
+                formatted_price = f"${response_data['predicted_price']:,.2f}"
                 
                 st.markdown(f"""
                     <div style="background: {tier['bg']}; border: 1px solid {tier['color']}; border-radius: 16px; padding: 2.2rem; margin-top: 2rem; text-align: center;">
@@ -181,16 +205,35 @@ with tab1:
                     </div>
                 """, unsafe_allow_html=True)
             else:
-                st.error("All network handshake routes exhausted.")
+                st.error(
+                    "Could not connect to FastAPI server and local models could not be loaded."
+                )
 
 # --- TAB 2: ADVANCED SYSTEM DATA ANALYTICS ---
 with tab2:
     if df_raw is not None:
+        required_columns = [
+            "sqft_living",
+            "price",
+            "grade",
+            "bedrooms",
+            "lat"
+        ]
+        
+        missing = [
+            c for c in required_columns
+            if c not in df_raw.columns
+        ]
+        
+        if missing:
+            st.error(f"Missing columns: {missing}")
+            st.stop()
+
         st.markdown("Ecosystem Data Insights Sandbox", unsafe_allow_html=True)
         c_col1, c_col2 = st.columns(2, gap="large")
         
         with c_col1:
-            st.markdown('', unsafe_allow_html=True)
+            st.markdown('<div class="chart-box">', unsafe_allow_html=True)
             st.markdown("📈 Market Valuation Scalability (Price vs. Living Space)", unsafe_allow_html=True)
             df_sample = df_raw.sample(n=500, random_state=42) if len(df_raw) > 500 else df_raw
             fig_scatter = px.scatter(
@@ -201,10 +244,10 @@ with tab2:
             )
             fig_scatter.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_scatter, use_container_width=True)
-            st.markdown('', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
             
         with c_col2:
-            st.markdown('', unsafe_allow_html=True)
+            st.markdown('<div class="chart-box">', unsafe_allow_html=True)
             st.markdown("🛏️ Structural Capacity Elasticity (Price Density by Bedrooms)", unsafe_allow_html=True)
             df_beds = df_raw.groupby('bedrooms')['price'].median().reset_index()
             fig_bar = px.bar(
@@ -215,13 +258,13 @@ with tab2:
             fig_bar.update_traces(marker_color='#6366f1', opacity=0.85)
             fig_bar.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_bar, use_container_width=True)
-            st.markdown('', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
             
         st.markdown("", unsafe_allow_html=True)
         c_col3, c_col4 = st.columns(2, gap="large")
         
         with c_col3:
-            st.markdown('', unsafe_allow_html=True)
+            st.markdown('<div class="chart-box">', unsafe_allow_html=True)
             st.markdown("🏗️ Structural Quality Multiplier (Price distribution by Grade)", unsafe_allow_html=True)
             fig_box = px.box(
                 df_sample, x="grade", y="price", color="grade",
@@ -231,19 +274,22 @@ with tab2:
             )
             fig_box.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False)
             st.plotly_chart(fig_box, use_container_width=True)
-            st.markdown('', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
             
         with c_col4:
-            st.markdown('', unsafe_allow_html=True)
+            st.markdown('<div class="chart-box">', unsafe_allow_html=True)
             st.markdown("🗺️ Spatial Micro-Market Density (Geospatial Property Distribution)", unsafe_allow_html=True)
-            fig_geo = px.scatter(
-                df_sample, x="long" if "long" in df_sample.columns else "sqft_living15", y="lat",
-                color="price", size="bedrooms", color_continuous_scale="Plasma",
-                labels={"lat": "Latitude Coordinate"},
-                template="plotly_dark"
-            )
-            fig_geo.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig_geo, use_container_width=True)
-            st.markdown('', unsafe_allow_html=True)
+            if {"lat", "long"}.issubset(df_sample.columns):
+                fig_geo = px.scatter(
+                    df_sample, x="long", y="lat",
+                    color="price", size="bedrooms", color_continuous_scale="Plasma",
+                    labels={"lat": "Latitude Coordinate"},
+                    template="plotly_dark"
+                )
+                fig_geo.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                st.plotly_chart(fig_geo, use_container_width=True)
+            else:
+                st.warning("Latitude/Longitude columns not found.")
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.error("Error loading underlying data arrays.")
