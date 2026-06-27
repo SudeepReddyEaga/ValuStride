@@ -9,6 +9,13 @@ pipeline {
 
     stages {
 
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/SudeepReddyEaga/ValuStride.git'
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 sh '''
@@ -19,28 +26,27 @@ pipeline {
         }
 
         stage('Push Docker Image') {
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-credentials',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-        )]) {
-            writeFile file: 'docker-token.txt', text: DOCKER_PASS
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
 
-            sh '''
-                set -e
+                    sh '''
+                        set -e
 
-                echo "Docker User = $DOCKER_USER"
+                        echo "Docker User = $DOCKER_USER"
 
-                cat docker-token.txt | docker login -u "$DOCKER_USER" --password-stdin
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                docker push $IMAGE_NAME:$IMAGE_TAG
+                        docker push $IMAGE_NAME:$IMAGE_TAG
 
-                docker logout
-            '''
+                        docker logout
+                    '''
+                }
+            }
         }
-    }
-}
 
         stage('Deploy to Kubernetes') {
             steps {
@@ -49,11 +55,11 @@ pipeline {
 
                     export KUBECONFIG=/var/jenkins_home/.kube/config
 
-                    kubectl apply -f k8s/deployment.yaml
-                    kubectl apply -f k8s/service.yaml
+                    kubectl apply -f k8s/deployment.yml
+                    kubectl apply -f k8s/service.yml
 
                     kubectl rollout restart deployment valustride-deployment
-                    kubectl rollout status deployment valustride-deployment
+                    kubectl rollout status deployment/valustride-deployment
                 '''
             }
         }
@@ -63,8 +69,14 @@ pipeline {
                 sh '''
                     export KUBECONFIG=/var/jenkins_home/.kube/config
 
-                    kubectl get pods
+                    echo "===== Pods ====="
+                    kubectl get pods -o wide
+
+                    echo "===== Services ====="
                     kubectl get svc
+
+                    echo "===== Deployments ====="
+                    kubectl get deployments
                 '''
             }
         }
