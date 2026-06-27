@@ -3,99 +3,89 @@ pipeline {
     agent any
 
     environment {
-
         IMAGE_NAME = "sudeepkumarreddyeaga/valustride"
-        IMAGE_TAG = "latest"
-
+        IMAGE_TAG  = "latest"
     }
 
     stages {
 
-        stage('Checkout Code') {
-
-            steps {
-
-                git branch: 'main',
-                url: 'https://github.com/SudeepReddyEaga/ValuStride.git'
-
-            }
-        }
-
         stage('Build Docker Image') {
-
             steps {
-
-                sh 'docker build -t $IMAGE_NAME:$IMAGE_TAG .'
-
+                sh '''
+                    set -e
+                    docker build -t $IMAGE_NAME:$IMAGE_TAG .
+                '''
             }
         }
 
-stage('Push Docker Image') {
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-credentials',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-        )]) {
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
 
-            sh '''
-                echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                docker push $IMAGE_NAME:$IMAGE_TAG
-                docker logout
-            '''
+                    sh '''
+                        set -e
+
+                        echo "Docker User = $DOCKER_USER"
+
+                        if [ -z "$DOCKER_PASS" ]; then
+                            echo "ERROR: Docker password is empty!"
+                            exit 1
+                        fi
+
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+                        docker push $IMAGE_NAME:$IMAGE_TAG
+
+                        docker logout
+                    '''
+                }
+            }
         }
-    }
-}
 
         stage('Deploy to Kubernetes') {
-
             steps {
-
                 sh '''
-                export KUBECONFIG=/var/jenkins_home/.kube/config
+                    set -e
 
-                kubectl apply -f k8s/deployment.yaml
-                kubectl apply -f k8s/service.yaml
+                    export KUBECONFIG=/var/jenkins_home/.kube/config
 
-                kubectl rollout restart deployment valustride-deployment
-		kubectl rollout status deployment valustride-deployment
+                    kubectl apply -f k8s/deployment.yaml
+                    kubectl apply -f k8s/service.yaml
+
+                    kubectl rollout restart deployment valustride-deployment
+                    kubectl rollout status deployment valustride-deployment
                 '''
-
             }
-
         }
 
         stage('Verify Deployment') {
-
             steps {
-
                 sh '''
-                export KUBECONFIG=/var/jenkins_home/.kube/config
+                    export KUBECONFIG=/var/jenkins_home/.kube/config
 
-                kubectl get pods
-                kubectl get svc
+                    kubectl get pods
+                    kubectl get svc
                 '''
-
             }
-
         }
-
     }
 
     post {
 
         success {
-
-            echo 'ValuStride CI/CD Pipeline Executed Successfully!'
-
+            echo '✅ ValuStride CI/CD Pipeline Executed Successfully!'
         }
 
         failure {
-
-            echo 'Pipeline Failed!'
-
+            echo '❌ Pipeline Failed!'
         }
 
+        always {
+            cleanWs()
+        }
     }
-
 }
