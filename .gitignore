@@ -1,6 +1,2 @@
-app/best_models.joblib
-app/reg_model.joblib
-app/scaler.joblib
-app/kc_house_data.csv
 __pycache__/
 .DS_Store
